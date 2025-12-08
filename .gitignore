@@ -207,7 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 # Ignore all raw datasets
-data/
+data/icdar_raw
+data/icdar_raw/train_images
 
 #（可选）忽略所有大文件
 *.jpg
@@ -215,5 +216,9 @@ data/
 *.jpeg
 
 #（但可以保留一些 README 占位文件）
-!data/README.md
-!data/.gitkeep
+!data/icdar_raw/README.md
+
+
+
+
+
