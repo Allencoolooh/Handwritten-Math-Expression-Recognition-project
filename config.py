@@ -63,14 +63,16 @@ class Config:
     N_HEAD = 8  # Multi-head Attention 头数
     NUM_ENCODER_LAYERS = 4  # 编码器层数
     NUM_DECODER_LAYERS = 4  # 解码器层数
-    DIM_FF = 512  # 前馈网络隐层维度
+    DIM_FF = 1024  # 前馈网络隐层维度
     DROPOUT = 0.1
+    MAX_TGT_LEN = 256  # 或者 150 / 200 也行，先设置一个上界
 
     # ========= 5. 训练超参数 =========
     BATCH_SIZE = 16
-    NUM_EPOCHS = 50
-    LEARNING_RATE = 1e-3
+    NUM_EPOCHS = 20
+    LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-4
+    GRAD_CLIP = 1.0  # 梯度裁剪上限
 
     # 学习率调整相关（后面训练脚本里会用到）
     LR_STEP_SIZE = 15  # 每多少个 epoch 衰减一次
@@ -79,7 +81,19 @@ class Config:
     # ========= 6. 设备 & 随机种子 =========
     SEED = 42
 
+    # 序列最大长度（给 decoder 的位置编码用）
+
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # checkpoint 保存目录
+    CKPT_DIR = PROJECT_ROOT / "checkpoints"
+    CKPT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 特殊 token
+    PAD_TOKEN = "<PAD>"
+    SOS_TOKEN = "<SOS>"
+    EOS_TOKEN = "<EOS>"
+    UNK_TOKEN = "<UNK>"
 
     @staticmethod
     def set_seed(seed: int = None):

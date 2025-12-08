@@ -2,6 +2,7 @@ from config import Config
 from utils.vocab import Vocab
 from utils.dataset import create_dataloader
 
+
 def main():
     vocab = Vocab.from_file(Config.VOCAB_PATH)
 
