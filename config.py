@@ -32,7 +32,7 @@ class Config:
     FULL_LABELS = DATA_DIR / "train_full_icdar.txt"
 
     # 图片根目录（假设标注文件里写的是类似 "train/img_0001.png" 这种相对路径）
-    IMG_BASE_DIR = DATA_DIR
+    IMG_BASE_DIR = PROJECT_ROOT
 
     # 模型和日志目录
     CHECKPOINT_DIR = PROJECT_ROOT / "results" / "checkpoints"
