@@ -219,6 +219,15 @@ data/icdar_raw/train_images
 !data/icdar_raw/README.md
 
 
+# 忽略所有 pth 和 pt 模型文件
+*.pth
+*.pt
+
+# 但允许 checkpoints/best.pt 被上传
+!checkpoints/best.pt
+
+
+
 
 
 
