@@ -64,12 +64,12 @@ class Config:
     NUM_ENCODER_LAYERS = 4  # 编码器层数
     NUM_DECODER_LAYERS = 4  # 解码器层数
     DIM_FF = 1024  # 前馈网络隐层维度
-    DROPOUT = 0.1
+    DROPOUT = 0.2
     MAX_TGT_LEN = 256  # 或者 150 / 200 也行，先设置一个上界
 
     # ========= 5. 训练超参数 =========
     BATCH_SIZE = 16
-    NUM_EPOCHS = 20
+    NUM_EPOCHS = 50
     LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-4
     GRAD_CLIP = 1.0  # 梯度裁剪上限

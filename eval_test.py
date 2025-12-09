@@ -114,6 +114,8 @@ def evaluate_test_set():
         tgt_output = batch["tgt_output"].to(device)
         tgt_lengths = batch["tgt_lengths"].to(device)
         labels = batch["labels"]  # 原始 LaTeX 文本 list[str]
+        if batch_id % 10 == 0:
+            print(f"[TestEval] On batch {batch_id}/{len(test_loader)}")
 
         # 前向
         logits = model(images, tgt_input, tgt_lengths)  # (B, L, V)

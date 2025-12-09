@@ -201,8 +201,8 @@ def main():
         vocab=vocab,
         batch_size=Config.BATCH_SIZE,
         shuffle=True,
-        num_workers=0,  # 先设 0，确认没问题后可以改大
-        augment=True,
+        num_workers=0,
+        augment=True,   # ★ 训练集开启数据增强
     )
     val_loader = create_dataloader(
         labels_path=Config.VAL_LABELS,
@@ -210,7 +210,7 @@ def main():
         batch_size=Config.BATCH_SIZE,
         shuffle=False,
         num_workers=0,
-        augment=False,
+        augment=False,  # ★ 验证集不做增强
     )
 
     # 3. 构建模型 & 优化器
@@ -224,7 +224,7 @@ def main():
     # （可选）从 checkpoint 恢复
     start_epoch = 1
     best_val_loss = math.inf
-    resume_path = "../checkpoints/last_epoch020.pt"  # 如果想恢复训练，改成某个 .pt 文件路径
+    resume_path = "../checkpoints/best.pt"  # 如不想恢复训练可改为 None
 
     if resume_path is not None:
         info = load_checkpoint(Path(resume_path), model, optimizer)

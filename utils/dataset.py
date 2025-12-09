@@ -2,25 +2,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any
 import math
 
 import numpy as np
 from PIL import Image
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Sampler, BatchSampler
+import torchvision.transforms as T
 
 from config import Config
 from .vocab import Vocab
-from torch.utils.data import Dataset, DataLoader, Sampler, BatchSampler
-import torch
-from torch.utils.data import (
-    DataLoader,
-    RandomSampler,
-    SequentialSampler,
-    BatchSampler,
-)
 
 
 class MathExprDataset(Dataset):
@@ -49,7 +42,7 @@ class MathExprDataset(Dataset):
         - img_base_dir: 图片根目录（标注文件里是相对路径，会拼在它后面）
         - img_height  : 统一缩放后的高度（像素）
         - max_width   : 统一的最大宽度（像素），不足右侧补零，超出裁剪
-        - augment     : 是否进行数据增强（当前预留接口，先不做）
+        - augment     : 是否进行数据增强
         """
         super().__init__()
         self.labels_path = Path(labels_path)
@@ -63,6 +56,41 @@ class MathExprDataset(Dataset):
 
         # 解析标注文件，得到 (img_rel_path, latex_str) 列表
         self.samples: List[Tuple[str, str]] = self._load_samples(self.labels_path)
+
+        # === 图像数据增强（只在 augment=True 时生效） ===
+        # 注意：这些操作作用在 PIL.Image 上，必须在 ToTensor 之前使用
+        self.aug_transform = T.Compose([
+            # 1. 轻微仿射变换：旋转 / 平移 / 缩放
+            T.RandomApply([
+                T.RandomAffine(
+                    degrees=2,                 # 小角度旋转
+                    translate=(0.02, 0.02),    # 最多 2% 平移
+                    scale=(0.95, 1.05),        # 轻微缩放
+                    shear=0,
+                )
+            ], p=0.6),
+
+            # 2. 轻微透视畸变，模拟拍照倾斜
+            T.RandomApply([
+                T.RandomPerspective(
+                    distortion_scale=0.20,
+                    p=1.0,
+                )
+            ], p=0.3),
+
+            # 3. 轻微模糊
+            T.RandomApply([
+                T.GaussianBlur(kernel_size=3)
+            ], p=0.3),
+
+            # 4. 亮度 / 对比度 调整
+            T.RandomApply([
+                T.ColorJitter(
+                    brightness=0.2,
+                    contrast=0.2,
+                )
+            ], p=0.5),
+        ])
 
     # ------------------------------------------------------------------ #
     #                1. 读取标注文件：img_path + latex                    #
@@ -115,14 +143,18 @@ class MathExprDataset(Dataset):
 
     def _apply_augmentation(self, img: Image.Image) -> Image.Image:
         """
-        预留的数据增强接口，目前不做任何修改，直接返回。
+        图像数据增强（只在训练集 augment=True 时调用）。
 
-        你以后可以在这里加：
-        - 轻微旋转 / 平移
-        - 轻微缩放 / 仿射变换
-        - 加一点噪声 / 模糊 等
+        增强效果：
+        - 轻微旋转 / 平移 / 缩放
+        - 轻微透视畸变
+        - 轻微模糊
+        - 亮度 / 对比度变化
+
+        注意：
+        - 不做剧烈变换，避免把字符“撕裂”或严重变形。
         """
-        return img
+        return self.aug_transform(img)
 
     def _resize_and_pad(self, img: Image.Image) -> torch.Tensor:
         """
@@ -178,7 +210,7 @@ class MathExprDataset(Dataset):
         # 1. 加载原图
         img = self._load_image(img_path)
 
-        # 2. 数据增强（目前为空操作）
+        # 2. 数据增强（仅训练集时启用）
         if self.augment:
             img = self._apply_augmentation(img)
 
@@ -211,15 +243,12 @@ class RandomIndexSampler(Sampler[int]):
     def __iter__(self):
         n = len(self.data_source)
         if self.generator is None:
-            # 用全局随机数生成器
             indices = torch.randperm(n).tolist()
         else:
-            # 用指定 generator（一般用不上）
             indices = torch.randperm(n, generator=self.generator).tolist()
         return iter(indices)
 
     def __len__(self):
-        # 这很关键，BatchSampler 会用到 len(sampler)
         return len(self.data_source)
 
 
@@ -232,22 +261,6 @@ def math_collate_fn(
 ) -> Dict[str, torch.Tensor]:
     """
     自定义的 collate_fn，给 DataLoader 使用。
-
-    输入 batch: List[样本字典]，每个样本是 MathExprDataset.__getitem__ 的返回：
-        {
-            "image": (1, H, W),
-            "label": str,
-            "tgt_ids": (T_i,)
-        }
-
-    输出一个 batch 字典：
-        {
-            "images":   (B, 1, H, W)
-            "tgt_input":  (B, L-1)   # decoder 输入序列
-            "tgt_output": (B, L-1)   # 监督标签（预测下一个 token）
-            "tgt_lengths": (B,)      # 有效长度（不含 padding，且对应 L-1）
-            "labels":   List[str]    # 原始 LaTeX 文本
-        }
     """
     # 1. 图像可以直接堆叠，因为都已被 resize + pad 为相同大小
     images = torch.stack([b["image"] for b in batch], dim=0)  # (B, 1, H, W)
@@ -271,10 +284,6 @@ def math_collate_fn(
         tgt_padded[i, :L] = seq
 
     # 4. 构造 decoder 的输入 / 输出序列
-    #    假设原始目标序列是 [SOS, a, b, c, EOS]
-    #    则：
-    #      tgt_input  = [SOS, a, b, c]
-    #      tgt_output = [a,   b, c, EOS]
     y_in = tgt_padded[:, :-1]   # (B, max_len-1)
     y_out = tgt_padded[:, 1:]   # (B, max_len-1)
 
@@ -293,40 +302,6 @@ def math_collate_fn(
 # ---------------------------------------------------------------------- #
 #             5. 一个方便的 DataLoader 工厂函数                         #
 # ---------------------------------------------------------------------- #
-'''def create_dataloader(
-    labels_path: Path,
-    vocab: Vocab,
-    batch_size: int,
-    shuffle: bool,          # 这个参数先保留接口，但暂时不用
-    num_workers: int = 0,
-    augment: bool = False,
-) -> DataLoader:
-    """
-    极简版 DataLoader：不使用 RandomSampler/BatchSampler，只用最基础的顺序取数。
-    先验证 Dataset + collate_fn 全部工作正常，后面再加 shuffle。
-    """
-    dataset = MathExprDataset(
-        labels_path=labels_path,
-        vocab=vocab,
-        img_base_dir=Config.IMG_BASE_DIR,
-        img_height=Config.IMG_HEIGHT,
-        max_width=Config.MAX_WIDTH,
-        augment=augment,
-    )
-
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=False,              # ★ 这里固定为 False，先别用内部 RandomSampler
-        num_workers=num_workers,
-        pin_memory=True,
-        collate_fn=lambda batch: math_collate_fn(batch, pad_id=vocab.pad_id),
-    )
-
-    return loader
-'''
-
-
 def create_dataloader(
     labels_path: Path,
     vocab: Vocab,
@@ -337,10 +312,9 @@ def create_dataloader(
 ) -> DataLoader:
     """
     最终可用于训练的 DataLoader 构造函数：
-    - shuffle=False：用顺序采样 + batch_size（最简单的情况）
+    - shuffle=False：用顺序采样 + batch_size
     - shuffle=True ：用自定义的 RandomIndexSampler + BatchSampler 实现打乱
     """
-
     dataset = MathExprDataset(
         labels_path=labels_path,
         vocab=vocab,
@@ -351,23 +325,21 @@ def create_dataloader(
     )
 
     if shuffle:
-        # 使用我们自己的随机采样器
         sampler = RandomIndexSampler(dataset)
         batch_sampler = BatchSampler(
             sampler,
             batch_size=batch_size,
-            drop_last=False,   # 最后一个 batch 不足也保留
+            drop_last=False,
         )
 
         loader = DataLoader(
             dataset,
-            batch_sampler=batch_sampler,   # 注意：有了 batch_sampler 就不要再传 batch_size/shuffle
+            batch_sampler=batch_sampler,
             num_workers=num_workers,
             pin_memory=True,
             collate_fn=lambda batch: math_collate_fn(batch, pad_id=vocab.pad_id),
         )
     else:
-        # 不打乱就用最简单的顺序 sampling
         loader = DataLoader(
             dataset,
             batch_size=batch_size,
