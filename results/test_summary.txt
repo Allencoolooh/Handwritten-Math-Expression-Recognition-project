@@ -1,0 +1,3 @@
+===== Test Summary =====
+Avg loss       : 0.4248
+Token accuracy : 87.47%
