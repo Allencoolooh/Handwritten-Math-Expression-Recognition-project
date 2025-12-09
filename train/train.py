@@ -102,11 +102,14 @@ def train_one_epoch(
         logits = model(images, tgt_input, tgt_lengths)     # (B, L, V)
         B, L, V = logits.shape
 
+        label_smoothing = getattr(Config, "LABEL_SMOOTHING", 0.1)
+
         # 计算 loss
         loss = F.cross_entropy(
             logits.view(B * L, V),
             tgt_output.view(B * L),
             ignore_index=model.pad_id,
+            label_smoothing=label_smoothing,
         )
 
         # 反向传播
@@ -163,10 +166,13 @@ def evaluate(
             logits = model(images, tgt_input, tgt_lengths)
             B, L, V = logits.shape
 
+            label_smoothing = getattr(Config, "LABEL_SMOOTHING", 0.1)
+
             loss = F.cross_entropy(
                 logits.view(B * L, V),
                 tgt_output.view(B * L),
                 ignore_index=model.pad_id,
+                label_smoothing=label_smoothing,
             )
 
             acc = compute_token_accuracy(logits, tgt_output, pad_id=model.pad_id)

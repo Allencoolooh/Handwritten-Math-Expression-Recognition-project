@@ -95,6 +95,8 @@ class Config:
     EOS_TOKEN = "<EOS>"
     UNK_TOKEN = "<UNK>"
 
+    LABEL_SMOOTHING = 0.1
+
     @staticmethod
     def set_seed(seed: int = None):
         """

@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from config import Config
-from .encoder import CNNEncoder
+from .encoder import CNNEncoder, ResNetEncoder
 from .decoder import TransformerDecoder, create_padding_mask
 
 
@@ -43,7 +43,7 @@ class MathFormulaRecognizer(nn.Module):
         self.eos_id = vocab.eos_id
 
         # 图像编码器
-        self.encoder = CNNEncoder(
+        self.encoder = ResNetEncoder(
             in_channels=Config.NUM_CHANNELS,
             d_model=d_model,
         )
