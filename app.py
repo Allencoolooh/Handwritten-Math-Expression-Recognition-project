@@ -1,17 +1,45 @@
-# app.py
+'''
 import streamlit as st
 from PIL import Image
 
 from inference import predict_latex_from_pil
 
-st.set_page_config(page_title="Handwritten Math Expression Recognition", layout="centered")
+
+st.set_page_config(
+    page_title="Handwritten Math Expression Recognition",
+    layout="centered",
+)
 
 st.title("✏️ 手写数学公式识别 Demo")
-st.write("上传一张手写数学公式图片，我帮你识别并渲染成直观公式。")
+st.write("上传一张手写数学公式图片，我会帮你识别成 **LaTeX 代码** 并渲染成直观公式。")
 
 uploaded = st.file_uploader("请选择一张图片文件", type=["png", "jpg", "jpeg"])
 
-use_beam = st.checkbox("使用 Beam Search 解码（更准确但更慢）", value=False)
+col1, col2 = st.columns(2)
+with col1:
+    decode_method = st.radio(
+        "解码方式",
+        options=["beam", "greedy"],
+        index=0,
+        help="Beam Search 一般更准确，但会稍慢一些。",
+    )
+with col2:
+    beam_size = st.slider(
+        "Beam size（仅在 Beam 模式下生效）",
+        min_value=2,
+        max_value=7,
+        value=3,
+        step=1,
+    )
+
+max_len = st.number_input(
+    "最大解码长度 max_len",
+    min_value=32,
+    max_value=512,
+    value=128,
+    step=16,
+    help="可以用来控制生成公式的最长长度，过长时可以适当减小。",
+)
 
 if uploaded is not None:
     img = Image.open(uploaded)
@@ -19,10 +47,15 @@ if uploaded is not None:
 
     if st.button("开始识别"):
         with st.spinner("识别中，请稍候..."):
-            latex = predict_latex_from_pil(img, use_beam=use_beam)
+            latex = predict_latex_from_pil(
+                img,
+                decode_method=decode_method,
+                beam_size=beam_size,
+                max_len=max_len,
+            )
 
-        if latex.strip() == "":
-            st.error("没有识别出内容，可能是模型或图片有问题。")
+        if not latex.strip():
+            st.error("识别结果为空，可能是模型、图片或权重有问题。")
         else:
             st.success("识别完成！")
 
@@ -30,5 +63,165 @@ if uploaded is not None:
             st.code(latex, language="latex")
 
             st.subheader("渲染后的公式：")
-            # ✅ 这里就是把 LaTeX 代码转换成直观公式的关键
+            # ✅ 这里就是“把 LaTeX 转成直观公式”的关键：
             st.latex(latex)
+'''
+
+import streamlit as st
+from PIL import Image
+from datetime import datetime
+
+from inference import predict_latex_from_pil
+
+st.set_page_config(
+    page_title="Handwritten Math Expression Recognition",
+    layout="centered",
+)
+
+st.title("✏️ 手写数学公式识别 Demo")
+st.write("上传一张手写数学公式图片，我会帮你识别成 **LaTeX 代码** 并渲染成直观公式。")
+
+# ---------------------- 初始化历史记录 ----------------------
+# 每条记录结构：
+# {
+#   "time": str,
+#   "image": PIL.Image,
+#   "latex": str,
+#   "decode_method": "beam"/"greedy",
+#   "beam_size": int,
+#   "max_len": int,
+# }
+if "history" not in st.session_state:
+    st.session_state["history"] = []
+
+
+uploaded = st.file_uploader("请选择一张图片文件", type=["png", "jpg", "jpeg"])
+
+col1, col2 = st.columns(2)
+with col1:
+    decode_method = st.radio(
+        "解码方式",
+        options=["beam", "greedy"],
+        index=0,
+        help="Beam Search 一般更准确，但会稍慢一些。",
+    )
+with col2:
+    beam_size = st.slider(
+        "Beam size（仅在 Beam 模式下生效）",
+        min_value=2,
+        max_value=7,
+        value=3,
+        step=1,
+    )
+
+max_len = st.number_input(
+    "最大解码长度 max_len",
+    min_value=32,
+    max_value=512,
+    value=128,
+    step=16,
+    help="可以用来控制生成公式的最长长度，过长时可以适当减小。",
+)
+
+current_result = None  # 用来在本次运行中存放最新结果
+
+
+# ---------------------- 主识别逻辑 ----------------------
+if uploaded is not None:
+    img = Image.open(uploaded)
+    st.image(img, caption="上传的图片", use_column_width=True)
+
+    if st.button("开始识别"):
+        with st.spinner("识别中，请稍候..."):
+            latex = predict_latex_from_pil(
+                img,
+                decode_method=decode_method,
+                beam_size=beam_size,
+                max_len=max_len,
+            )
+
+        if not latex.strip():
+            st.error("识别结果为空，可能是模型、图片或权重有问题。")
+        else:
+            st.success("识别完成！")
+
+            # ---------------- 当前结果显示区：原图 + 公式 + 下载按钮 ----------------
+            st.subheader("本次识别结果")
+
+            c1, c2 = st.columns([1, 1])
+
+            with c1:
+                st.markdown("**原图：**")
+                st.image(img, use_column_width=True)
+
+            with c2:
+                st.markdown("**渲染后的公式：**")
+                st.latex(latex)
+
+                st.markdown("**LaTeX 代码：**")
+                st.code(latex, language="latex")
+
+                # 下载按钮：将 LaTeX 文本导出为 .tex 文件
+                st.download_button(
+                    label="💾 下载 LaTeX 代码（.tex）",
+                    data=latex,
+                    file_name="formula.tex",
+                    mime="text/plain",
+                    key="download_current_latex",
+                )
+
+            # ---------------- 将本次结果写入历史记录 ----------------
+            record = {
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "image": img.copy(),  # 存一份副本，避免后面对象被修改
+                "latex": latex,
+                "decode_method": decode_method,
+                "beam_size": beam_size,
+                "max_len": max_len,
+            }
+            st.session_state.history.append(record)
+            current_result = record
+
+
+# ---------------------- 历史识别记录 ----------------------
+if st.session_state.history:
+    st.markdown("---")
+    st.subheader("📜 历史识别记录")
+
+    # 最新的放在最上面看着更舒服
+    # reversed() 只是遍历顺序反过来，不会修改原列表
+    for idx, rec in enumerate(reversed(st.session_state.history)):
+        # 为了让 key 唯一，生成一个 index
+        hist_index = len(st.session_state.history) - 1 - idx
+
+        with st.expander(f"[{rec['time']}] 记录 #{hist_index + 1}"):
+            h1, h2 = st.columns([1, 1])
+
+            with h1:
+                st.markdown("**原图：**")
+                st.image(rec["image"], use_column_width=True)
+
+            with h2:
+                st.markdown(
+                    f"**解码方式：** {rec['decode_method']}  "
+                    f"(beam_size={rec['beam_size']}, max_len={rec['max_len']})"
+                )
+
+                st.markdown("**渲染后的公式：**")
+                st.latex(rec["latex"])
+
+                st.markdown("**LaTeX 代码：**")
+                st.code(rec["latex"], language="latex")
+
+                st.download_button(
+                    label="💾 下载该条 LaTeX 代码（.tex）",
+                    data=rec["latex"],
+                    file_name=f"formula_{hist_index + 1}.tex",
+                    mime="text/plain",
+                    key=f"download_hist_{hist_index}",
+                )
+
+    # 可选：清空历史记录按钮
+    if st.button("🧹 清空历史记录"):
+        st.session_state.history = []
+        st.experimental_rerun()
