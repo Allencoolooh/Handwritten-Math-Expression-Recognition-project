@@ -151,12 +151,6 @@ class ResNetEncoder(nn.Module):
     用 ResNet-18 做图像特征提取的编码器：
     输入:  (B, C_in, H, W)
     输出:  (B, T, D)  其中 T≈W/32, D=Config.D_MODEL
-
-    做法：
-    - 去掉 ResNet 的 avgpool 和 fc，保留到 layer4；
-    - 得到特征图 (B, C, H', W')；
-    - 把高度 H' 合并到通道维: (B, C*H', W')
-    - 把宽度 W' 当作时间步 T，线性映射到 d_model 维度。
     """
 
     def __init__(
@@ -179,20 +173,20 @@ class ResNetEncoder(nn.Module):
         )
 
         # 保留到 layer4 之前 (conv1~layer4)
-        # children: [conv1, bn1, relu, maxpool, layer1, layer2, layer3, layer4, avgpool, fc]
         self.backbone = nn.Sequential(*list(base.children())[:-2])  # 去掉 avgpool, fc
 
-        # 我们不知道 H'，但可以在 forward 动态算 C*H'
         self.d_model = d_model
-        # 先占位，等 forward 第一次跑时用实际尺寸初始化 proj
-        self.proj = None
 
-    def _build_proj(self, c: int, h: int):
-        """
-        根据实际的 C, H 构建线性层: (C*H) -> d_model
-        只在第一次 forward 时调用一次。
-        """
-        in_dim = c * h
+        # 2. 用一个 dummy 输入推一遍，确定 C, H'
+        #    假定你的图片在 dataset 里已经统一为 (H, W) = (Config.IMG_HEIGHT, Config.MAX_WIDTH)
+        dummy = torch.zeros(1, in_channels, Config.IMG_HEIGHT, Config.MAX_WIDTH)
+        with torch.no_grad():
+            feat = self.backbone(dummy)   # (1, C, H', W')
+            _, C, H, W = feat.shape
+
+        in_dim = C * H   # 我们把高度 H' 合到通道里，所以线性层输入为 C*H'
+
+        # 3. 现在在 __init__ 里就把 proj 建好，这样 encoder.proj 始终存在
         self.proj = nn.Linear(in_dim, self.d_model)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -203,22 +197,16 @@ class ResNetEncoder(nn.Module):
         B = x.size(0)
 
         # 1. ResNet 提特征
-        feat = self.backbone(x)  # (B, C, H', W')
-        B, C, H, W = feat.shape  # H, W 是下采样后的尺寸
+        feat = self.backbone(x)      # (B, C, H', W')
+        B, C, H, W = feat.shape
 
-        # 2. 若 proj 还没建，根据当前 C, H 初始化
-        if self.proj is None:
-            self._build_proj(C, H)
-            # 把 proj 丢到同一个 device 上
-            self.proj.to(feat.device)
-
-        # 3. 合并高度维: (B, C, H, W) -> (B, C*H, W)
+        # 2. 合并高度维: (B, C, H, W) -> (B, C*H, W)
         feat = feat.view(B, C * H, W)
 
-        # 4. 把 W 当作时间步 T: (B, C*H, W) -> (B, T=W, C*H)
+        # 3. 把 W 当作时间步 T: (B, C*H, W) -> (B, T=W, C*H)
         feat = feat.permute(0, 2, 1)  # (B, T, C*H)
 
-        # 5. 线性映射到 d_model
-        seq = self.proj(feat)  # (B, T, d_model)
+        # 4. 线性映射到 d_model
+        seq = self.proj(feat)        # (B, T, d_model)
 
         return seq

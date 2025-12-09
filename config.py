@@ -19,16 +19,16 @@ class Config:
     # 项目根目录：就是当前这个 config.py 所在的目录
     PROJECT_ROOT = Path(__file__).resolve().parent
 
-    # 数据根目录：之前你说数据在 data/ 下面
+    # 数据根目录：数据在 data/ 下面
     DATA_DIR = PROJECT_ROOT / "data"
 
-    # 标注文件路径（之后我们会写脚本生成这些 txt）
+    # 标注文件路径
     # 每一行格式：  图片相对路径 \t latex字符串
     TRAIN_LABELS = DATA_DIR / "train.txt"
     VAL_LABELS = DATA_DIR / "val.txt"
     TEST_LABELS = DATA_DIR / "test.txt"  # 可选，有就用，没有可以先不管
 
-    # 例如之前说过的 “整合的 ICDAR 全量标注文件”
+    # “整合的 ICDAR 全量标注文件”
     FULL_LABELS = DATA_DIR / "train_full_icdar.txt"
 
     # 图片根目录（假设标注文件里写的是类似 "train/img_0001.png" 这种相对路径）
@@ -88,12 +88,6 @@ class Config:
     # checkpoint 保存目录
     CKPT_DIR = PROJECT_ROOT / "checkpoints"
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 特殊 token
-    PAD_TOKEN = "<PAD>"
-    SOS_TOKEN = "<SOS>"
-    EOS_TOKEN = "<EOS>"
-    UNK_TOKEN = "<UNK>"
 
     LABEL_SMOOTHING = 0.1
 

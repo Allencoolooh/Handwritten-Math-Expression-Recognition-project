@@ -18,16 +18,16 @@ from model.model import MathFormulaRecognizer
 
 
 def compute_token_accuracy(
-    logits: torch.Tensor,          # (B, L, V)
-    targets: torch.Tensor,         # (B, L)
-    pad_id: int,
+        logits: torch.Tensor,  # (B, L, V)
+        targets: torch.Tensor,  # (B, L)
+        pad_id: int,
 ) -> float:
     """
     计算 token 级别准确率（忽略 padding）。
     """
     with torch.no_grad():
-        preds = logits.argmax(dim=-1)      # (B, L)
-        mask = (targets != pad_id)         # (B, L)
+        preds = logits.argmax(dim=-1)  # (B, L)
+        mask = (targets != pad_id)  # (B, L)
         correct = (preds == targets) & mask
         total = mask.sum().item()
         if total == 0:
@@ -36,11 +36,11 @@ def compute_token_accuracy(
 
 
 def save_checkpoint(
-    epoch: int,
-    model: MathFormulaRecognizer,
-    optimizer: optim.Optimizer,
-    best_val_loss: float,
-    ckpt_path: Path,
+        epoch: int,
+        model: MathFormulaRecognizer,
+        optimizer: optim.Optimizer,
+        best_val_loss: float,
+        ckpt_path: Path,
 ) -> None:
     """
     保存训练 checkpoint。
@@ -57,9 +57,9 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    ckpt_path: Path,
-    model: MathFormulaRecognizer,
-    optimizer: optim.Optimizer,
+        ckpt_path: Path,
+        model: MathFormulaRecognizer,
+        optimizer: optim.Optimizer,
 ) -> Dict[str, Any]:
     """
     从 checkpoint 恢复训练（如果需要）。
@@ -75,10 +75,10 @@ def load_checkpoint(
 
 
 def train_one_epoch(
-    model: MathFormulaRecognizer,
-    train_loader,
-    optimizer: optim.Optimizer,
-    epoch: int,
+        model: MathFormulaRecognizer,
+        train_loader,
+        optimizer: optim.Optimizer,
+        epoch: int,
 ) -> Dict[str, float]:
     """
     训练一个 epoch，返回 {"loss": avg_loss, "acc": avg_acc}。
@@ -91,15 +91,15 @@ def train_one_epoch(
     start_time = time.time()
 
     for step, batch in enumerate(train_loader, start=1):
-        images = batch["images"].to(Config.DEVICE)         # (B, 1, H, W)
-        tgt_input = batch["tgt_input"].to(Config.DEVICE)   # (B, L)
-        tgt_output = batch["tgt_output"].to(Config.DEVICE) # (B, L)
-        tgt_lengths = batch["tgt_lengths"].to(Config.DEVICE) # (B,)
+        images = batch["images"].to(Config.DEVICE)  # (B, 1, H, W)
+        tgt_input = batch["tgt_input"].to(Config.DEVICE)  # (B, L)
+        tgt_output = batch["tgt_output"].to(Config.DEVICE)  # (B, L)
+        tgt_lengths = batch["tgt_lengths"].to(Config.DEVICE)  # (B,)
 
         optimizer.zero_grad(set_to_none=True)
 
         # 前向
-        logits = model(images, tgt_input, tgt_lengths)     # (B, L, V)
+        logits = model(images, tgt_input, tgt_lengths)  # (B, L, V)
         B, L, V = logits.shape
 
         label_smoothing = getattr(Config, "LABEL_SMOOTHING", 0.1)
@@ -135,7 +135,7 @@ def train_one_epoch(
             elapsed = time.time() - start_time
             print(
                 f"[Train] Epoch {epoch} Step {step}/{len(train_loader)} "
-                f"Loss {avg_loss:.4f} Acc {avg_acc*100:.2f}% "
+                f"Loss {avg_loss:.4f} Acc {avg_acc * 100:.2f}% "
                 f"Time {elapsed:.1f}s"
             )
 
@@ -145,8 +145,8 @@ def train_one_epoch(
 
 
 def evaluate(
-    model: MathFormulaRecognizer,
-    val_loader,
+        model: MathFormulaRecognizer,
+        val_loader,
 ) -> Dict[str, float]:
     """
     在验证集上评估，返回 {"loss": avg_loss, "acc": avg_acc}。
@@ -201,7 +201,7 @@ def main():
         vocab=vocab,
         batch_size=Config.BATCH_SIZE,
         shuffle=True,
-        num_workers=0,    # 先设 0，确认没问题后可以改大
+        num_workers=0,  # 先设 0，确认没问题后可以改大
         augment=True,
     )
     val_loader = create_dataloader(
@@ -224,7 +224,7 @@ def main():
     # （可选）从 checkpoint 恢复
     start_epoch = 1
     best_val_loss = math.inf
-    resume_path = None  # 如果想恢复训练，改成某个 .pt 文件路径
+    resume_path = "../checkpoints/last_epoch020.pt"  # 如果想恢复训练，改成某个 .pt 文件路径
 
     if resume_path is not None:
         info = load_checkpoint(Path(resume_path), model, optimizer)
@@ -239,14 +239,14 @@ def main():
         train_stats = train_one_epoch(model, train_loader, optimizer, epoch)
         print(
             f"[Train] Epoch {epoch} done. "
-            f"Loss {train_stats['loss']:.4f}, Acc {train_stats['acc']*100:.2f}%"
+            f"Loss {train_stats['loss']:.4f}, Acc {train_stats['acc'] * 100:.2f}%"
         )
 
         # 4.2 在验证集上评估
         val_stats = evaluate(model, val_loader)
         print(
             f"[Val]   Epoch {epoch} done. "
-            f"Loss {val_stats['loss']:.4f}, Acc {val_stats['acc']*100:.2f}%"
+            f"Loss {val_stats['loss']:.4f}, Acc {val_stats['acc'] * 100:.2f}%"
         )
 
         # 4.3 保存最新 checkpoint
@@ -263,3 +263,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# 12.9模型与训练策略改善后，[Train] Epoch 20 done. Loss 1.0967, Acc 92.68% [Val]   Epoch 20 done. Loss 1.2942, Acc 87.31%
