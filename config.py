@@ -69,7 +69,7 @@ class Config:
 
     # ========= 5. 训练超参数 =========
     BATCH_SIZE = 16
-    NUM_EPOCHS = 70
+    NUM_EPOCHS = 80
     LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-4
     GRAD_CLIP = 1.0  # 梯度裁剪上限

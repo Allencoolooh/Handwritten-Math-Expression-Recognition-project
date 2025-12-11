@@ -202,7 +202,7 @@ def main():
         batch_size=Config.BATCH_SIZE,
         shuffle=True,
         num_workers=0,
-        augment=True,   # ★ 训练集开启数据增强
+        augment=True,  # ★ 训练集开启数据增强
     )
     val_loader = create_dataloader(
         labels_path=Config.VAL_LABELS,
@@ -265,3 +265,5 @@ if __name__ == "__main__":
     main()
 
 # 12.9模型与训练策略改善后，[Train] Epoch 20 done. Loss 1.0967, Acc 92.68% [Val]   Epoch 20 done. Loss 1.2942, Acc 87.31%
+
+# 12.11 oversampling后，[Train] Epoch 80 done. Loss 1.0596, Acc 93.62%  [Val] Epoch 80 done. Loss 1.1272, Acc 92.37%
