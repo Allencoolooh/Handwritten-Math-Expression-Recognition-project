@@ -24,7 +24,7 @@ class Config:
 
     # 标注文件路径
     # 每一行格式：  图片相对路径 \t latex字符串
-    TRAIN_LABELS = DATA_DIR / "train.txt"
+    TRAIN_LABELS = DATA_DIR / "train_oversampled.txt"
     VAL_LABELS = DATA_DIR / "val.txt"
     TEST_LABELS = DATA_DIR / "test.txt"  # 可选，有就用，没有可以先不管
 
@@ -69,7 +69,7 @@ class Config:
 
     # ========= 5. 训练超参数 =========
     BATCH_SIZE = 16
-    NUM_EPOCHS = 50
+    NUM_EPOCHS = 70
     LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-4
     GRAD_CLIP = 1.0  # 梯度裁剪上限
