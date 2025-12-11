@@ -78,19 +78,18 @@ st.set_page_config(
     layout="centered",
 )
 
+# ---------------------- 新增：网页最上端署名 ----------------------
+st.markdown("""
+<div style='text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 10px;'>
+    制作者：Allen
+</div>
+""", unsafe_allow_html=True)
+# ---------------------------------------------------------------
+
 st.title("✏️ 手写数学公式识别 Demo")
 st.write("上传一张手写数学公式图片，我会帮你识别成 **LaTeX 代码** 并渲染成直观公式。")
 
 # ---------------------- 初始化历史记录 ----------------------
-# 每条记录结构：
-# {
-#   "time": str,
-#   "image": PIL.Image,
-#   "latex": str,
-#   "decode_method": "beam"/"greedy",
-#   "beam_size": int,
-#   "max_len": int,
-# }
 if "history" not in st.session_state:
     st.session_state["history"] = []
 
@@ -120,10 +119,10 @@ max_len = st.number_input(
     max_value=512,
     value=128,
     step=16,
-    help="可以用来控制生成公式的最长长度，过长时可以适当减小。",
+    help="用于控制生成公式的最大长度（防止无限生成）。",
 )
 
-current_result = None  # 用来在本次运行中存放最新结果
+current_result = None
 
 
 # ---------------------- 主识别逻辑 ----------------------
@@ -145,7 +144,7 @@ if uploaded is not None:
         else:
             st.success("识别完成！")
 
-            # ---------------- 当前结果显示区：原图 + 公式 + 下载按钮 ----------------
+            # -------------- 本次结果区域 --------------
             st.subheader("本次识别结果")
 
             c1, c2 = st.columns([1, 1])
@@ -161,7 +160,6 @@ if uploaded is not None:
                 st.markdown("**LaTeX 代码：**")
                 st.code(latex, language="latex")
 
-                # 下载按钮：将 LaTeX 文本导出为 .tex 文件
                 st.download_button(
                     label="💾 下载 LaTeX 代码（.tex）",
                     data=latex,
@@ -170,17 +168,17 @@ if uploaded is not None:
                     key="download_current_latex",
                 )
 
-            # ---------------- 将本次结果写入历史记录 ----------------
-            record = {
+            # 添加到历史记录
+            rec = {
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "image": img.copy(),  # 存一份副本，避免后面对象被修改
+                "image": img.copy(),
                 "latex": latex,
                 "decode_method": decode_method,
                 "beam_size": beam_size,
                 "max_len": max_len,
             }
-            st.session_state.history.append(record)
-            current_result = record
+            st.session_state.history.append(rec)
+            current_result = rec
 
 
 # ---------------------- 历史识别记录 ----------------------
@@ -188,10 +186,7 @@ if st.session_state.history:
     st.markdown("---")
     st.subheader("📜 历史识别记录")
 
-    # 最新的放在最上面看着更舒服
-    # reversed() 只是遍历顺序反过来，不会修改原列表
     for idx, rec in enumerate(reversed(st.session_state.history)):
-        # 为了让 key 唯一，生成一个 index
         hist_index = len(st.session_state.history) - 1 - idx
 
         with st.expander(f"[{rec['time']}] 记录 #{hist_index + 1}"):
@@ -214,14 +209,13 @@ if st.session_state.history:
                 st.code(rec["latex"], language="latex")
 
                 st.download_button(
-                    label="💾 下载该条 LaTeX 代码（.tex）",
+                    label="💾 下载该条 LaTeX（.tex）",
                     data=rec["latex"],
                     file_name=f"formula_{hist_index + 1}.tex",
                     mime="text/plain",
                     key=f"download_hist_{hist_index}",
                 )
 
-    # 可选：清空历史记录按钮
     if st.button("🧹 清空历史记录"):
         st.session_state.history = []
         st.experimental_rerun()

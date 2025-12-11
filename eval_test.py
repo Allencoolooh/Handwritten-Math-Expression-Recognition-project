@@ -36,6 +36,14 @@ def normalize_formula(s: str) -> str:
     return "".join(s.split())
 
 
+def latex_len_tokens(s: str) -> int:
+    """
+    用空格分词估计 LaTeX 公式 token 长度。
+    （你的标注已经是按 token 用空格分开的）
+    """
+    return len(s.strip().split()) if s.strip() else 0
+
+
 def load_best(model: MathFormulaRecognizer):
     ckpt_dir = getattr(Config, "CKPT_DIR", "checkpoints")
     ckpt_path = Path(ckpt_dir) / "best.pt"
@@ -63,6 +71,10 @@ def evaluate_test_set():
     指标包括：
       - token-level accuracy
       - formula-level accuracy（整句完全一致）
+      - 按长度分桶的公式级准确率：
+          * L <= 10
+          * 10 < L <= 20
+          * L > 20
     """
     device = get_device()
     print("[TestEval] Using device:", device)
@@ -99,9 +111,16 @@ def evaluate_test_set():
     total_acc = 0.0
     total_tokens = 0
 
-    # 公式级统计
+    # 公式级统计（总体）
     total_formulas = 0
     correct_formulas = 0
+
+    # 按长度分桶统计
+    bucket_stats = {
+        "short": {"correct": 0, "total": 0},  # L <= 10
+        "mid":   {"correct": 0, "total": 0},  # 10 < L <= 20
+        "long":  {"correct": 0, "total": 0},  # L > 20
+    }
 
     # 打开样本结果文件
     f_samples = samples_path.open("w", encoding="utf-8")
@@ -114,6 +133,7 @@ def evaluate_test_set():
         tgt_output = batch["tgt_output"].to(device)
         tgt_lengths = batch["tgt_lengths"].to(device)
         labels = batch["labels"]  # 原始 LaTeX 文本 list[str]
+
         if batch_id % 10 == 0:
             print(f"[TestEval] On batch {batch_id}/{len(test_loader)}")
 
@@ -141,24 +161,39 @@ def evaluate_test_set():
             device=device,
         )
 
-        # 写入每条样本 & 统计公式级准确率
+        # 写入每条样本 & 统计公式级准确率（含长度分桶）
         for i, (gt, pr) in enumerate(zip(labels, preds)):
             norm_gt = normalize_formula(gt)
             norm_pr = normalize_formula(pr)
             is_correct = (norm_gt == norm_pr)
 
+            # 总体公式统计
             total_formulas += 1
             if is_correct:
                 correct_formulas += 1
 
+            # 按长度分桶（用原始 LaTeX 的空格 token 数）
+            L_tokens = latex_len_tokens(gt)
+            if L_tokens <= 10:
+                bucket = "short"
+            elif L_tokens <= 20:
+                bucket = "mid"
+            else:
+                bucket = "long"
+
+            bucket_stats[bucket]["total"] += 1
+            if is_correct:
+                bucket_stats[bucket]["correct"] += 1
+
+            # 样本写入文件
             f_samples.write(f"[Batch {batch_id} Sample {i}]\n")
             f_samples.write(f"Correct: {is_correct}\n")
-            f_samples.write(f"GT  : {gt}\n")
+            f_samples.write(f"GT  ({L_tokens} tokens): {gt}\n")
             f_samples.write(f"Pred: {pr}\n\n")
 
     f_samples.close()
 
-    # 4. 汇总指标
+    # 4. 汇总整体指标
     avg_loss = total_loss / max(total_tokens, 1)
     avg_token_acc = total_acc / max(total_tokens, 1)
     formula_acc = (
@@ -171,13 +206,52 @@ def evaluate_test_set():
         f.write(f"Avg loss             : {avg_loss:.4f}\n")
         f.write(f"Token accuracy       : {avg_token_acc*100:.2f}%\n")
         f.write(f"Formula accuracy     : {formula_acc*100:.2f}%\n")
-        f.write(f"Total formulas       : {total_formulas}\n")
+        f.write(f"Total formulas       : {total_formulas}\n\n")
 
+        # 各长度桶的公式级准确率
+        for name, info in bucket_stats.items():
+            if info["total"] == 0:
+                acc = 0.0
+            else:
+                acc = info["correct"] / info["total"]
+
+            if name == "short":
+                label = "L <= 10"
+            elif name == "mid":
+                label = "10 < L <= 20"
+            else:
+                label = "L > 20"
+
+            f.write(
+                f"Formula accuracy [{label:8s}]: "
+                f"{acc*100:.2f}% ({info['correct']}/{info['total']})\n"
+            )
+
+    # 终端打印
     print("\n===== Test Set Summary =====")
     print(f"Avg loss         : {avg_loss:.4f}")
     print(f"Token accuracy   : {avg_token_acc*100:.2f}%")
     print(f"Formula accuracy : {formula_acc*100:.2f}%")
     print(f"Total formulas   : {total_formulas}")
+
+    for name, info in bucket_stats.items():
+        if info["total"] == 0:
+            acc = 0.0
+        else:
+            acc = info["correct"] / info["total"]
+
+        if name == "short":
+            label = "L <= 10"
+        elif name == "mid":
+            label = "10 < L <= 20"
+        else:
+            label = "L > 20"
+
+        print(
+            f"Formula accuracy [{label:8s}]: "
+            f"{acc*100:.2f}% ({info['correct']}/{info['total']})"
+        )
+
     print(f"\n[Saved] Summary  -> {summary_path}")
     print(f"[Saved] Samples  -> {samples_path}")
 

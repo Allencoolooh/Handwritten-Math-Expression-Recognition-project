@@ -3,3 +3,7 @@ Avg loss             : 0.3721
 Token accuracy       : 91.25%
 Formula accuracy     : 33.80%
 Total formulas       : 3000
+
+Formula accuracy [L <= 10 ]: 60.32% (190/315)
+Formula accuracy [10 < L <= 20]: 46.98% (443/943)
+Formula accuracy [L > 20  ]: 21.87% (381/1742)
