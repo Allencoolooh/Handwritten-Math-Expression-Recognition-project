@@ -46,7 +46,7 @@ def latex_len_tokens(s: str) -> int:
 
 def load_best(model: MathFormulaRecognizer):
     ckpt_dir = getattr(Config, "CKPT_DIR", "checkpoints")
-    ckpt_path = Path(ckpt_dir) / "longft_last_epoch005.pt"
+    ckpt_path = Path(ckpt_dir) / "mixedft_best.pt"
     assert ckpt_path.is_file(), f"[TestEval] best.pt not found at: {ckpt_path}"
 
     ckpt = torch.load(ckpt_path, map_location="cpu")
@@ -155,11 +155,10 @@ def evaluate_test_set():
         total_tokens += n_tokens
 
         # 解码
-        preds = model.recognize_beam(
+        preds = model.recognize(
             images,
             max_len=getattr(Config, "MAX_TGT_LEN", 128),
             device=device,
-            beam_size=5,
         )
 
         # 写入每条样本 & 统计公式级准确率（含长度分桶）

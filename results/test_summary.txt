@@ -1,9 +1,9 @@
 ===== Test Set Summary (evaluated with best.pt) =====
-Avg loss             : 0.3118
-Token accuracy       : 93.48%
-Formula accuracy     : 41.60%
+Avg loss             : 0.3045
+Token accuracy       : 93.67%
+Formula accuracy     : 42.73%
 Total formulas       : 3000
 
-Formula accuracy [L <= 10 ]: 54.60% (172/315)
-Formula accuracy [10 < L <= 20]: 54.29% (512/943)
-Formula accuracy [L > 20  ]: 32.38% (564/1742)
+Formula accuracy [L <= 10 ]: 59.68% (188/315)
+Formula accuracy [10 < L <= 20]: 55.67% (525/943)
+Formula accuracy [L > 20  ]: 32.66% (569/1742)
