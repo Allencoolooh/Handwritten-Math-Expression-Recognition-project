@@ -46,7 +46,7 @@ def latex_len_tokens(s: str) -> int:
 
 def load_best(model: MathFormulaRecognizer):
     ckpt_dir = getattr(Config, "CKPT_DIR", "checkpoints")
-    ckpt_path = Path(ckpt_dir) / "last_epoch080.pt"
+    ckpt_path = Path(ckpt_dir) / "longft_last_epoch005.pt"
     assert ckpt_path.is_file(), f"[TestEval] best.pt not found at: {ckpt_path}"
 
     ckpt = torch.load(ckpt_path, map_location="cpu")
