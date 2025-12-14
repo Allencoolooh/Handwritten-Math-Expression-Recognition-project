@@ -1,72 +1,3 @@
-'''
-import streamlit as st
-from PIL import Image
-
-from inference import predict_latex_from_pil
-
-
-st.set_page_config(
-    page_title="Handwritten Math Expression Recognition",
-    layout="centered",
-)
-
-st.title("✏️ 手写数学公式识别 Demo")
-st.write("上传一张手写数学公式图片，我会帮你识别成 **LaTeX 代码** 并渲染成直观公式。")
-
-uploaded = st.file_uploader("请选择一张图片文件", type=["png", "jpg", "jpeg"])
-
-col1, col2 = st.columns(2)
-with col1:
-    decode_method = st.radio(
-        "解码方式",
-        options=["beam", "greedy"],
-        index=0,
-        help="Beam Search 一般更准确，但会稍慢一些。",
-    )
-with col2:
-    beam_size = st.slider(
-        "Beam size（仅在 Beam 模式下生效）",
-        min_value=2,
-        max_value=7,
-        value=3,
-        step=1,
-    )
-
-max_len = st.number_input(
-    "最大解码长度 max_len",
-    min_value=32,
-    max_value=512,
-    value=128,
-    step=16,
-    help="可以用来控制生成公式的最长长度，过长时可以适当减小。",
-)
-
-if uploaded is not None:
-    img = Image.open(uploaded)
-    st.image(img, caption="上传的图片", use_column_width=True)
-
-    if st.button("开始识别"):
-        with st.spinner("识别中，请稍候..."):
-            latex = predict_latex_from_pil(
-                img,
-                decode_method=decode_method,
-                beam_size=beam_size,
-                max_len=max_len,
-            )
-
-        if not latex.strip():
-            st.error("识别结果为空，可能是模型、图片或权重有问题。")
-        else:
-            st.success("识别完成！")
-
-            st.subheader("LaTeX 代码：")
-            st.code(latex, language="latex")
-
-            st.subheader("渲染后的公式：")
-            # ✅ 这里就是“把 LaTeX 转成直观公式”的关键：
-            st.latex(latex)
-'''
-
 import streamlit as st
 from PIL import Image
 from datetime import datetime
@@ -78,7 +9,7 @@ st.set_page_config(
     layout="centered",
 )
 
-# ---------------------- 新增：网页最上端署名 ----------------------
+# ---------------------- 网页最上端署名 ----------------------
 st.markdown("""
 <div style='text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 10px;'>
     制作者：Allen

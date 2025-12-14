@@ -70,7 +70,7 @@ _model = MathFormulaRecognizer(_vocab).to(_device)
 _ckpt_dir = getattr(Config, "CKPT_DIR", Path("checkpoints"))
 if not isinstance(_ckpt_dir, Path):
     _ckpt_dir = Path(_ckpt_dir)
-_ckpt_path = _ckpt_dir / "best.pt"
+_ckpt_path = _ckpt_dir / "mixedft_best.pt"
 assert _ckpt_path.is_file(), f"[Inference] best.pt not found at: {_ckpt_path}"
 
 _ckpt = torch.load(_ckpt_path, map_location="cpu")

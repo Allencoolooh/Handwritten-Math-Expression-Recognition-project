@@ -1,5 +1,6 @@
 # eval_test.py
 from pathlib import Path
+from typing import List, Tuple, Dict
 
 import torch
 import torch.nn.functional as F
@@ -30,23 +31,56 @@ def compute_token_accuracy(logits, targets, pad_id: int) -> float:
 
 def normalize_formula(s: str) -> str:
     """
-    用于“公式级准确率”的对比：
-    这里简单地去掉所有空白字符，保留 LaTeX 语义相关字符。
+    用于“公式级准确率”的对比：去掉所有空白字符。
     """
     return "".join(s.split())
 
 
 def latex_len_tokens(s: str) -> int:
     """
-    用空格分词估计 LaTeX 公式 token 长度。
-    （你的标注已经是按 token 用空格分开的）
+    用空格分词估计 LaTeX 公式 token 长度（你的标注已按 token 空格分开）
     """
     return len(s.strip().split()) if s.strip() else 0
 
 
+def tokenize_latex_space(s: str) -> List[str]:
+    """
+    你的标注是“空格分 token”，因此这里直接 split 即可。
+    """
+    s = s.strip()
+    return s.split() if s else []
+
+
+def levenshtein_distance(a: List[str], b: List[str]) -> int:
+    """
+    token-level Levenshtein 编辑距离
+    - 插入/删除/替换代价均为 1
+    """
+    n, m = len(a), len(b)
+    if n == 0:
+        return m
+    if m == 0:
+        return n
+
+    # 1D DP 省内存
+    prev = list(range(m + 1))
+    for i in range(1, n + 1):
+        cur = [i] + [0] * m
+        ai = a[i - 1]
+        for j in range(1, m + 1):
+            cost = 0 if ai == b[j - 1] else 1
+            cur[j] = min(
+                prev[j] + 1,        # delete
+                cur[j - 1] + 1,     # insert
+                prev[j - 1] + cost  # substitute
+            )
+        prev = cur
+    return prev[m]
+
+
 def load_best(model: MathFormulaRecognizer):
     ckpt_dir = getattr(Config, "CKPT_DIR", "checkpoints")
-    ckpt_path = Path(ckpt_dir) / "mixedft_best.pt"
+    ckpt_path = Path(ckpt_dir) / "mixedft_ss_best.pt"
     assert ckpt_path.is_file(), f"[TestEval] best.pt not found at: {ckpt_path}"
 
     ckpt = torch.load(ckpt_path, map_location="cpu")
@@ -65,16 +99,15 @@ def load_best(model: MathFormulaRecognizer):
 @torch.no_grad()
 def evaluate_test_set():
     """
-    在【测试集】上评估 best.pt，并把结果写入 /results：
+    在【测试集】上评估，并把结果写入 /results：
       - results/test_summary.txt
       - results/test_samples.txt
-    指标包括：
-      - token-level accuracy
-      - formula-level accuracy（整句完全一致）
-      - 按长度分桶的公式级准确率：
-          * L <= 10
-          * 10 < L <= 20
-          * L > 20
+
+    新增指标：
+      - Near-miss (准成功) 生成率：
+          * token 编辑距离 <= {2,3,5}
+          * token 错误率 <= {5%,10%}
+        只统计那些 “公式不完全正确但接近正确” 的样本。
     """
     device = get_device()
     print("[TestEval] Using device:", device)
@@ -98,11 +131,11 @@ def evaluate_test_set():
         batch_size=getattr(Config, "BATCH_SIZE", 16),
         shuffle=False,
         num_workers=0,
-        augment=False,  # 测试集不做增强
+        augment=False,
     )
     print(f"[TestEval] Loaded test set with {len(test_loader.dataset)} samples.")
 
-    # 3. 构建模型 & 加载 best.pt
+    # 3. 构建模型 & 加载权重
     model = MathFormulaRecognizer(vocab).to(device)
     load_best(model)
     model.eval()
@@ -115,12 +148,22 @@ def evaluate_test_set():
     total_formulas = 0
     correct_formulas = 0
 
-    # 按长度分桶统计
+    # 按长度分桶统计（公式级准确率）
     bucket_stats = {
         "short": {"correct": 0, "total": 0},  # L <= 10
         "mid":   {"correct": 0, "total": 0},  # 10 < L <= 20
         "long":  {"correct": 0, "total": 0},  # L > 20
     }
+
+    # === Near-miss 统计 ===
+    # 编辑距离阈值
+    ed_thresholds = [2, 3, 5]
+    near_by_ed = {k: 0 for k in ed_thresholds}     # 只统计非完全正确样本中的近似正确数
+    # 错误率阈值
+    er_thresholds = [0.05, 0.10]
+    near_by_er = {k: 0 for k in er_thresholds}
+
+    total_non_exact = 0  # 非完全正确的公式数量（near-miss 分母）
 
     # 打开样本结果文件
     f_samples = samples_path.open("w", encoding="utf-8")
@@ -132,13 +175,13 @@ def evaluate_test_set():
         tgt_input = batch["tgt_input"].to(device)
         tgt_output = batch["tgt_output"].to(device)
         tgt_lengths = batch["tgt_lengths"].to(device)
-        labels = batch["labels"]  # 原始 LaTeX 文本 list[str]
+        labels = batch["labels"]
 
         if batch_id % 10 == 0:
             print(f"[TestEval] On batch {batch_id}/{len(test_loader)}")
 
-        # 前向
-        logits = model(images, tgt_input, tgt_lengths)  # (B, L, V)
+        # 训练模式一致的 token loss（teacher forcing）
+        logits = model(images, tgt_input, tgt_lengths)
         B, L, V = logits.shape
 
         loss = F.cross_entropy(
@@ -154,67 +197,101 @@ def evaluate_test_set():
         total_acc += acc * n_tokens
         total_tokens += n_tokens
 
-        # 解码
+        # 推理解码
         preds = model.recognize(
             images,
             max_len=getattr(Config, "MAX_TGT_LEN", 128),
             device=device,
         )
 
-        # 写入每条样本 & 统计公式级准确率（含长度分桶）
+        # 逐条统计
         for i, (gt, pr) in enumerate(zip(labels, preds)):
             norm_gt = normalize_formula(gt)
             norm_pr = normalize_formula(pr)
-            is_correct = (norm_gt == norm_pr)
+            is_exact = (norm_gt == norm_pr)
 
-            # 总体公式统计
             total_formulas += 1
-            if is_correct:
+            if is_exact:
                 correct_formulas += 1
 
-            # 按长度分桶（用原始 LaTeX 的空格 token 数）
+            # 长度分桶（按 GT token 数）
             L_tokens = latex_len_tokens(gt)
             if L_tokens <= 10:
                 bucket = "short"
+                bucket_label = "L <= 10"
             elif L_tokens <= 20:
                 bucket = "mid"
+                bucket_label = "10 < L <= 20"
             else:
                 bucket = "long"
+                bucket_label = "L > 20"
 
             bucket_stats[bucket]["total"] += 1
-            if is_correct:
+            if is_exact:
                 bucket_stats[bucket]["correct"] += 1
 
-            # 样本写入文件
+            # === Near-miss 计算（只对非 exact 的样本）===
+            gt_toks = tokenize_latex_space(gt)
+            pr_toks = tokenize_latex_space(pr)
+
+            ed = levenshtein_distance(gt_toks, pr_toks)
+            denom = max(len(gt_toks), len(pr_toks), 1)
+            err_rate = ed / denom  # 用编辑距离近似“token 错误率”
+
+            near_flags_ed = {}
+            near_flags_er = {}
+
+            if not is_exact:
+                total_non_exact += 1
+
+                for k in ed_thresholds:
+                    ok = (ed <= k)
+                    near_flags_ed[k] = ok
+                    if ok:
+                        near_by_ed[k] += 1
+
+                for r in er_thresholds:
+                    ok = (err_rate <= r)
+                    near_flags_er[r] = ok
+                    if ok:
+                        near_by_er[r] += 1
+
+            # 样本写入文件（包含 near-miss 信息）
             f_samples.write(f"[Batch {batch_id} Sample {i}]\n")
-            f_samples.write(f"Correct: {is_correct}\n")
+            f_samples.write(f"Bucket: {bucket_label}\n")
+            f_samples.write(f"ExactCorrect: {is_exact}\n")
+            f_samples.write(f"EditDistance(tokens): {ed}\n")
+            f_samples.write(f"ErrRate≈ED/maxLen: {err_rate:.4f}\n")
+            if not is_exact:
+                f_samples.write(f"NearByED: " +
+                                ", ".join([f"ED<={k}:{near_flags_ed.get(k, False)}" for k in ed_thresholds]) + "\n")
+                f_samples.write(f"NearByER: " +
+                                ", ".join([f"ER<={int(r*100)}%:{near_flags_er.get(r, False)}" for r in er_thresholds]) + "\n")
             f_samples.write(f"GT  ({L_tokens} tokens): {gt}\n")
             f_samples.write(f"Pred: {pr}\n\n")
 
     f_samples.close()
 
-    # 4. 汇总整体指标
+    # 汇总整体指标
     avg_loss = total_loss / max(total_tokens, 1)
     avg_token_acc = total_acc / max(total_tokens, 1)
-    formula_acc = (
-        correct_formulas / total_formulas if total_formulas > 0 else 0.0
-    )
+    formula_acc = correct_formulas / total_formulas if total_formulas > 0 else 0.0
 
-    # 5. 写入 summary 文件
+    # 计算 near-miss 率：分母是“非完全正确样本数”
+    near_rate_ed = {k: (near_by_ed[k] / total_non_exact if total_non_exact > 0 else 0.0) for k in ed_thresholds}
+    near_rate_er = {r: (near_by_er[r] / total_non_exact if total_non_exact > 0 else 0.0) for r in er_thresholds}
+
+    # 写入 summary
     with summary_path.open("w", encoding="utf-8") as f:
-        f.write("===== Test Set Summary (evaluated with best.pt) =====\n")
+        f.write("===== Test Set Summary (evaluated with checkpoint) =====\n")
         f.write(f"Avg loss             : {avg_loss:.4f}\n")
         f.write(f"Token accuracy       : {avg_token_acc*100:.2f}%\n")
-        f.write(f"Formula accuracy     : {formula_acc*100:.2f}%\n")
+        f.write(f"Formula accuracy     : {formula_acc*100:.2f}% ({correct_formulas}/{total_formulas})\n")
         f.write(f"Total formulas       : {total_formulas}\n\n")
 
-        # 各长度桶的公式级准确率
+        # 各长度桶
         for name, info in bucket_stats.items():
-            if info["total"] == 0:
-                acc = 0.0
-            else:
-                acc = info["correct"] / info["total"]
-
+            acc_b = (info["correct"] / info["total"]) if info["total"] > 0 else 0.0
             if name == "short":
                 label = "L <= 10"
             elif name == "mid":
@@ -223,23 +300,31 @@ def evaluate_test_set():
                 label = "L > 20"
 
             f.write(
-                f"Formula accuracy [{label:8s}]: "
-                f"{acc*100:.2f}% ({info['correct']}/{info['total']})\n"
+                f"Formula accuracy [{label:12s}]: "
+                f"{acc_b*100:.2f}% ({info['correct']}/{info['total']})\n"
             )
+
+        f.write("\n")
+        f.write("----- Near-miss (almost correct) -----\n")
+        f.write(f"Non-exact formulas    : {total_non_exact}\n")
+
+        # Near-miss by ED
+        for k in ed_thresholds:
+            f.write(f"Near-miss rate (ED <= {k}) : {near_rate_ed[k]*100:.2f}% ({near_by_ed[k]}/{total_non_exact})\n")
+
+        # Near-miss by error rate
+        for r in er_thresholds:
+            f.write(f"Near-miss rate (ER <= {int(r*100)}%) : {near_rate_er[r]*100:.2f}% ({near_by_er[r]}/{total_non_exact})\n")
 
     # 终端打印
     print("\n===== Test Set Summary =====")
     print(f"Avg loss         : {avg_loss:.4f}")
     print(f"Token accuracy   : {avg_token_acc*100:.2f}%")
-    print(f"Formula accuracy : {formula_acc*100:.2f}%")
-    print(f"Total formulas   : {total_formulas}")
+    print(f"Formula accuracy : {formula_acc*100:.2f}% ({correct_formulas}/{total_formulas})")
+    print(f"Non-exact        : {total_non_exact}")
 
     for name, info in bucket_stats.items():
-        if info["total"] == 0:
-            acc = 0.0
-        else:
-            acc = info["correct"] / info["total"]
-
+        acc_b = (info["correct"] / info["total"]) if info["total"] > 0 else 0.0
         if name == "short":
             label = "L <= 10"
         elif name == "mid":
@@ -247,10 +332,14 @@ def evaluate_test_set():
         else:
             label = "L > 20"
 
-        print(
-            f"Formula accuracy [{label:8s}]: "
-            f"{acc*100:.2f}% ({info['correct']}/{info['total']})"
-        )
+        print(f"Formula accuracy [{label:12s}]: {acc_b*100:.2f}% ({info['correct']}/{info['total']})")
+
+    print("\n----- Near-miss (almost correct) -----")
+    print(f"Non-exact formulas: {total_non_exact}")
+    for k in ed_thresholds:
+        print(f"Near-miss rate (ED <= {k}) : {near_rate_ed[k]*100:.2f}% ({near_by_ed[k]}/{total_non_exact})")
+    for r in er_thresholds:
+        print(f"Near-miss rate (ER <= {int(r*100)}%) : {near_rate_er[r]*100:.2f}% ({near_by_er[r]}/{total_non_exact})")
 
     print(f"\n[Saved] Summary  -> {summary_path}")
     print(f"[Saved] Samples  -> {samples_path}")
@@ -258,7 +347,3 @@ def evaluate_test_set():
 
 if __name__ == "__main__":
     evaluate_test_set()
-
-'''[Train] Epoch 80 done. Loss 1.0596, Acc 93.62%
-[Val]   Epoch 80 done. Loss 1.1272, Acc 92.37%
-'''

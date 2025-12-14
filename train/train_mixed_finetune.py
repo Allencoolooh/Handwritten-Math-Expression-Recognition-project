@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
 
@@ -14,6 +13,8 @@ from config import Config
 from utils.vocab import Vocab
 from utils.dataset import create_dataloader
 from model.model import MathFormulaRecognizer
+
+from loss_utils import build_token_weight_vector, weighted_cross_entropy
 
 
 def get_device():
@@ -46,19 +47,42 @@ def freeze_encoder(model: MathFormulaRecognizer):
         p.requires_grad = False
 
 
-def train_one_epoch_mixed(model, loader_a, loader_b, optimizer, device):
+def train_one_epoch_mixed(
+    model: MathFormulaRecognizer,
+    loader_a,
+    loader_b,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    weight_vec: torch.Tensor,
+) -> dict:
+    """
+    混合训练一个 epoch：
+    - batch 轮流来自 loader_a / loader_b（A,B,A,B,...）
+    - 使用加权交叉熵 weighted_cross_entropy（数字/结构/变量/单位加权）
+    - 统计 token accuracy（忽略 PAD）
+    """
     model.train()
-    it_a = iter(loader_a)
-    it_b = iter(loader_b)
 
+    # 无限迭代器：避免 StopIteration
+    def infinite_iter(dl):
+        while True:
+            for b in dl:
+                yield b
+
+    it_a = infinite_iter(loader_a)
+    it_b = infinite_iter(loader_b)
+
+    # 每个 epoch 的步数：用两者较小者，避免一边过度主导
     steps = min(len(loader_a), len(loader_b))
-    total_loss, total_acc, total_tokens = 0.0, 0.0, 0
 
+    total_loss, total_acc, total_tokens = 0.0, 0.0, 0
     label_smoothing = float(getattr(Config, "LABEL_SMOOTHING", 0.1))
+    grad_clip = getattr(Config, "GRAD_CLIP", None)
+
+    start_time = time.time()
 
     for step in range(steps):
-        # === 轮流取 batch：A -> B ===
-        batch = next(it_a) if step % 2 == 0 else next(it_b)
+        batch = next(it_a) if (step % 2 == 0) else next(it_b)
 
         images = batch["images"].to(device)
         tgt_input = batch["tgt_input"].to(device)
@@ -67,33 +91,38 @@ def train_one_epoch_mixed(model, loader_a, loader_b, optimizer, device):
 
         optimizer.zero_grad(set_to_none=True)
 
-        logits = model(images, tgt_input, tgt_lengths)
-        B, L, V = logits.shape
+        logits = model(images, tgt_input, tgt_lengths)  # (B,L,V)
 
-        loss = F.cross_entropy(
-            logits.view(B * L, V),
-            tgt_output.view(B * L),
-            ignore_index=model.pad_id,
+        loss = weighted_cross_entropy(
+            logits,
+            tgt_output,
+            pad_id=model.pad_id,
+            weight_vec=weight_vec,
             label_smoothing=label_smoothing,
         )
 
         loss.backward()
-        if getattr(Config, "GRAD_CLIP", None):
-            clip_grad_norm_(model.parameters(), float(Config.GRAD_CLIP))
+
+        if grad_clip is not None and float(grad_clip) > 0:
+            clip_grad_norm_(model.parameters(), float(grad_clip))
+
         optimizer.step()
 
         with torch.no_grad():
             acc = token_acc(logits, tgt_output, model.pad_id)
             n_tok = (tgt_output != model.pad_id).sum().item()
+
             total_loss += loss.item() * n_tok
             total_acc += acc * n_tok
             total_tokens += n_tok
 
         if step % 50 == 0:
+            elapsed = time.time() - start_time
             print(
                 f"[MixedFT] Step {step}/{steps} "
                 f"Loss {total_loss / max(total_tokens,1):.4f} "
-                f"Acc {100 * total_acc / max(total_tokens,1):.2f}%"
+                f"Acc {100 * total_acc / max(total_tokens,1):.2f}% "
+                f"Time {elapsed:.1f}s"
             )
 
     return {
@@ -103,10 +132,19 @@ def train_one_epoch_mixed(model, loader_a, loader_b, optimizer, device):
 
 
 @torch.no_grad()
-def evaluate(model, loader, device):
+def evaluate(
+    model: MathFormulaRecognizer,
+    loader,
+    device: torch.device,
+    weight_vec: torch.Tensor,
+) -> dict:
+    """
+    验证集评估（与训练保持一致：同样使用加权 CE）。
+    返回 {"loss": avg_loss, "acc": avg_acc}
+    """
     model.eval()
-    total_loss, total_acc, total_tokens = 0.0, 0.0, 0
 
+    total_loss, total_acc, total_tokens = 0.0, 0.0, 0
     label_smoothing = float(getattr(Config, "LABEL_SMOOTHING", 0.1))
 
     for batch in loader:
@@ -115,13 +153,13 @@ def evaluate(model, loader, device):
         tgt_output = batch["tgt_output"].to(device)
         tgt_lengths = batch["tgt_lengths"].to(device)
 
-        logits = model(images, tgt_input, tgt_lengths)
-        B, L, V = logits.shape
+        logits = model(images, tgt_input, tgt_lengths)  # (B,L,V)
 
-        loss = F.cross_entropy(
-            logits.view(B * L, V),
-            tgt_output.view(B * L),
-            ignore_index=model.pad_id,
+        loss = weighted_cross_entropy(
+            logits,
+            tgt_output,
+            pad_id=model.pad_id,
+            weight_vec=weight_vec,
             label_smoothing=label_smoothing,
         )
 
@@ -143,6 +181,7 @@ def main():
     print("[MixedFT] Using device:", device)
 
     vocab = Vocab.from_file(Config.VOCAB_PATH)
+    print("[MixedFT] Vocab size:", len(vocab))
 
     # === DataLoaders ===
     loader_long = create_dataloader(
@@ -150,6 +189,7 @@ def main():
         vocab=vocab,
         batch_size=Config.BATCH_SIZE,
         shuffle=True,
+        num_workers=0,
         augment=True,
     )
 
@@ -158,6 +198,7 @@ def main():
         vocab=vocab,
         batch_size=Config.BATCH_SIZE,
         shuffle=True,
+        num_workers=0,
         augment=True,
     )
 
@@ -166,18 +207,29 @@ def main():
         vocab=vocab,
         batch_size=Config.BATCH_SIZE,
         shuffle=False,
+        num_workers=0,
         augment=False,
+    )
+
+    # === Build token weights (critical) ===
+    weight_vec = build_token_weight_vector(
+        vocab,
+        w_digit=1.8,
+        w_var=1.3,
+        w_struct=1.6,
+        w_unit=1.4,
     )
 
     # === Model ===
     model = MathFormulaRecognizer(vocab).to(device)
 
-    ckpt_path = Path(Config.CKPT_DIR) / "longft_last_epoch005.pt"
+    ckpt_path = Path(Config.CKPT_DIR) / "mixedft_best.pt"
     load_model_only(ckpt_path, model, device)
 
     freeze_encoder(model)
     print("[MixedFT] Encoder frozen, training decoder only.")
 
+    # 只优化 requires_grad=True 的参数（避免冻结导致 optimizer 组不匹配）
     optimizer = optim.Adam(
         [p for p in model.parameters() if p.requires_grad],
         lr=3e-5,
@@ -191,24 +243,28 @@ def main():
     for ep in range(1, epochs + 1):
         print(f"\n===== Mixed Fine-tune Epoch {ep}/{epochs} =====")
 
-        tr = train_one_epoch_mixed(model, loader_long, loader_norm, optimizer, device)
+        tr = train_one_epoch_mixed(
+            model, loader_long, loader_norm, optimizer, device, weight_vec
+        )
         print(f"[Train] Loss {tr['loss']:.4f} Acc {tr['acc']*100:.2f}%")
 
-        va = evaluate(model, val_loader, device)
+        va = evaluate(model, val_loader, device, weight_vec)
         print(f"[Val]   Loss {va['loss']:.4f} Acc {va['acc']*100:.2f}%")
 
+        # 保存 last
         torch.save(
             {"model_state": model.state_dict()},
-            ckpt_dir / f"mixedft_last_epoch{ep:03d}.pt"
+            ckpt_dir / f"mixedft_last_epoch{ep:03d}.pt",
         )
 
+        # 保存 best（用加权 val loss 判定）
         if va["loss"] < best_val:
             best_val = va["loss"]
             torch.save(
                 {"model_state": model.state_dict()},
-                ckpt_dir / "mixedft_best.pt"
+                ckpt_dir / "mixedft_best.pt",
             )
-            print("[MixedFT] New best mixed model saved.")
+            print(f"[MixedFT] New best mixed model saved. best_val_loss={best_val:.4f}")
 
 
 if __name__ == "__main__":

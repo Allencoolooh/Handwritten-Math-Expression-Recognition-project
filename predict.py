@@ -181,7 +181,7 @@ def load_model_and_vocab() -> tuple[MathFormulaRecognizer, Vocab]:
     ckpt_dir = getattr(Config, "CKPT_DIR", Path("checkpoints"))
     if not isinstance(ckpt_dir, Path):
         ckpt_dir = Path(ckpt_dir)
-    ckpt_path = ckpt_dir / "best.pt"
+    ckpt_path = ckpt_dir / "mixedft_best.pt"
     assert ckpt_path.is_file(), f"[Predict] best.pt not found at: {ckpt_path}"
 
     ckpt = torch.load(ckpt_path, map_location="cpu")

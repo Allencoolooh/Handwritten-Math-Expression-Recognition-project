@@ -1,9 +1,17 @@
-===== Test Set Summary (evaluated with best.pt) =====
-Avg loss             : 0.3045
-Token accuracy       : 93.67%
-Formula accuracy     : 42.73%
+===== Test Set Summary (evaluated with checkpoint) =====
+Avg loss             : 0.2971
+Token accuracy       : 93.66%
+Formula accuracy     : 42.90% (1287/3000)
 Total formulas       : 3000
 
-Formula accuracy [L <= 10 ]: 59.68% (188/315)
-Formula accuracy [10 < L <= 20]: 55.67% (525/943)
-Formula accuracy [L > 20  ]: 32.66% (569/1742)
+Formula accuracy [L <= 10     ]: 61.59% (194/315)
+Formula accuracy [10 < L <= 20]: 55.25% (521/943)
+Formula accuracy [L > 20      ]: 32.84% (572/1742)
+
+----- Near-miss (almost correct) -----
+Non-exact formulas    : 1713
+Near-miss rate (ED <= 2) : 0.06% (1/1713)
+Near-miss rate (ED <= 3) : 0.29% (5/1713)
+Near-miss rate (ED <= 5) : 1.52% (26/1713)
+Near-miss rate (ER <= 5%) : 0.00% (0/1713)
+Near-miss rate (ER <= 10%) : 0.00% (0/1713)
