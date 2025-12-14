@@ -8,43 +8,45 @@ This project implements an end-to-end handwritten mathematical expression recogn
 
 **The system is designed as a vision-to-sequence model and covers the full engineering pipeline:**
 
-·Dataset construction and preprocessing
+Dataset construction and preprocessing
 
-·CNN + Transformer encoder–decoder modeling
+CNN + Transformer encoder–decoder modeling
 
-·Training, fine-tuning, and evaluation (token-level & formula-level)
+Training, fine-tuning, and evaluation (token-level & formula-level)
 
-·Advanced optimization strategies (oversampling, long-formula finetuning, weighted loss, beam search, etc.)
+Advanced optimization strategies (oversampling, long-formula finetuning, weighted loss, beam search, etc.)
 
-·Web-based interactive demo for real-world usage
+Web-based interactive demo for real-world usage
 
 **The project is suitable for:**
 
-·Course projects / capstone projects
+Course projects / capstone projects
 
-·Research prototyping in OCR / HMER
+Research prototyping in OCR / HMER
 
-·Engineering-oriented deep learning practice
+Engineering-oriented deep learning practice
+
 
 ## ✨ Features
 
-·CNN + Transformer architecture for structured math recognition
+CNN + Transformer architecture for structured math recognition
 
-·Token-level & formula-level evaluation
+Token-level & formula-level evaluation
 
-·Special optimization for long mathematical expressions
+Special optimization for long mathematical expressions
 
-·Weighted loss for digits / structure / variables / units
+Weighted loss for digits / structure / variables / units
 
-·Beam Search decoding
+Beam Search decoding
 
-·Web demo with image upload & LaTeX rendering
+Web demo with image upload & LaTeX rendering
 
-·Clean, modular, and extensible codebase
+Clean, modular, and extensible codebase
+
 
 ## 🧠 Model Architecture
 
-Input Image
+`Input Image
     ↓
 CNN Encoder (feature extraction)
     ↓
@@ -52,7 +54,7 @@ Transformer Encoder (visual sequence modeling)
     ↓
 Transformer Decoder (autoregressive LaTeX generation)
     ↓
-LaTeX Token Sequence
+LaTeX Token Sequence`
 
 
 **Key characteristics:**
@@ -65,9 +67,10 @@ LaTeX Token Sequence
 
 ·Designed to handle nested structures like \frac, ^, _, \begin{matrix}
 
+
 ## 📁 Project Structure
 
-Handwritten-Math-Expression-Recognition-project/
+`Handwritten-Math-Expression-Recognition-project/
 │
 ├── config.py                 # Global configuration
 ├── requirements.txt
@@ -103,23 +106,25 @@ Handwritten-Math-Expression-Recognition-project/
 │
 ├── checkpoints/               # Model checkpoints (ignored)
 ├── results/                   # Evaluation outputs
-└── README.md
+└── README.md`
+
 
 ## ⚙️ Environment Setup
 
 ### 1. Clone Repository
 
-git clone https://github.com/YourUsername/Handwritten-Math-Expression-Recognition-project.git
-cd Handwritten-Math-Expression-Recognition-project
+`git clone https://github.com/YourUsername/Handwritten-Math-Expression-Recognition-project.git
+cd Handwritten-Math-Expression-Recognition-project`
 
 ### 2. Create Python Environment
 
-conda create -n hmer python=3.9
-conda activate hmer
+`conda create -n hmer python=3.9
+conda activate hmer`
 
 ### 3. Install Dependencies
 
-pip install -r requirements.txt
+`pip install -r requirements.txt`
+
 
 ## 📦 Dataset Preparation
 
@@ -129,12 +134,12 @@ The project uses ICDAR-style handwritten math datasets.
 
 Each annotation file follows the format:
 
-relative/image/path.jpg<TAB>latex tokens (space-separated)
+`relative/image/path.jpg<TAB>latex tokens (space-separated)`
 
 
 Example:
 
-data/icdar_raw/train_images/train_1234.jpg    \frac { 1 } { x } + 2
+`data/icdar_raw/train_images/train_1234.jpg    \frac { 1 } { x } + 2`
 
 ### 2. Dataset Download
 
@@ -147,89 +152,93 @@ Please download the dataset from the following cloud link:
 
 After downloading, organize the data as:
 
-data/
+`data/
 ├── icdar_raw/
 │   └── train_images/
 ├── train.txt
 ├── val.txt
 ├── test.txt
 ├── train_long.txt
-└── train_oversampled.txt
+└── train_oversampled.txt`
 
 
 ⚠️ Paths in .txt files must match the actual image paths.
+
 
 ## 🚀 Training
 
 ### 1. Basic Training
 
-python train/train.py
+`python train/train.py`
 
 
 This performs standard teacher-forcing training using cross-entropy loss.
 
 ### 2. Long-Formula Fine-tuning
 
-python train/train_long_finetune.py
+`python train/train_long_finetune.py`
 
 
 Used to improve performance on long expressions (L > 20 tokens).
 
 ### 3. Mixed Fine-tuning (Recommended)
 
-python train/train_mixed_finetune.py
+`python train/train_mixed_finetune.py`
 
 
 **Key strategies:**
 
-·Mix normal & long-formula samples
+Mix normal & long-formula samples
 
-·Freeze encoder, fine-tune decoder
+Freeze encoder, fine-tune decoder
 
-·Weighted token loss
+Weighted token loss
 
-·Label smoothing
+Label smoothing
+
 
 ## 📊 Evaluation
 
 **Run Evaluation on Test Set**
-python eval_test.py
+`python eval_test.py`
 
 
 Metrics reported:
 
-·Average loss
+Average loss
 
-·Token accuracy
+Token accuracy
 
-·Formula accuracy
+Formula accuracy
 
-·Formula accuracy by length bucket
+Formula accuracy by length bucket
 
-·Near-miss (almost-correct) statistics
+Near-miss (almost-correct) statistics
 
 Evaluation results are saved to:
 
-results/
+`results/
 ├── test_summary.txt
-└── test_samples.txt
+└── test_samples.txt`
+
 
 ## 🔍 Single Image Inference
 
-python predict.py --image path/to/image.jpg
+`python predict.py --image path/to/image.jpg`
 
 
 Outputs:
 
-·Predicted LaTeX code
+Predicted LaTeX code
 
-·Rendered math expression
+Rendered math expression
+
 
 ## 🌐 Web Demo
 
 Start Web Application
-cd web_demo
-python app.py
+`cd web_demo
+python app.py`
 
 
 Then open in browser:
@@ -249,6 +258,7 @@ Features:
 
 ·History of recognition results
 
+
 ## 📈 Current Performance (Stage Summary)
 
 Metric	            Value
@@ -258,6 +268,7 @@ Short formulas	    >58%
 Long formulas	    ~32%
 
 Long expressions remain the primary challenge.
+
 
 ## 🔧 Implemented Optimization Strategies
 
@@ -275,6 +286,7 @@ Near-miss error analysis
 
 Photo-style image preprocessing
 
+
 ## 🔮 Future Work
 
 Scheduled Sampling
@@ -287,10 +299,12 @@ AST-based LaTeX modeling
 
 Further robustness for real-world photos
 
+
 ## 📜 License
 
 This project is for academic and research use.
 Please cite or reference appropriately if used in publications.
+
 
 ## 🙋 Author
 
